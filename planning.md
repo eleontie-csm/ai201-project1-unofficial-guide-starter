@@ -73,11 +73,23 @@ its own.
 The 150-character overlap (~19%) guards against a key fact landing on a chunk boundary —
 e.g., a requirement whose condition is in one chunk and its exception in the next.
 
-*Validation plan (Milestone 3):* after chunking I'll count total chunks. The project
-guideline is 50–2,000 chunks; with ~1,099 pages this may run high. If I land well over
-2,000, I'll raise the chunk size toward ~1,000 chars (still within the MiniLM window)
-rather than accept thousands of thin chunks. I'll also print 5 random chunks and confirm
-each is self-contained, with no leftover HTML or PDF artifacts.
+*Validation outcome (Milestone 3 — updated after implementation):* the pipeline produced
+**5,629 chunks** (avg 711 chars), which exceeds the project's 50–2,000 guideline. I had
+planned to fix an overage by raising chunk size toward ~1,000 chars, but on implementation
+that doesn't work: ~1,000-char chunks still yield ~4,600 chunks, and going large enough to
+reach 2,000 chunks (~2,200 chars) would blow past MiniLM's 256-token window and silently
+truncate text. I therefore **kept ~800-char chunks and accept the higher count.** The
+50–2,000 guideline is aimed at smaller, noisier corpora where a high count signals thin,
+low-signal fragments; my chunks average 711 chars and are self-contained regulatory/handbook
+units, so that failure mode doesn't apply, and 5,629 vectors is trivial for ChromaDB. The
+real binding constraint on chunk *size* is the embedding window, not the chunk *count*.
+(This is a deliberate divergence from the spec — noted here for the README spec reflection.)
+
+I also verified the checkpoint: printed 5 random chunks (readable and self-contained),
+confirmed 0 empty chunks and no leftover boilerplate (GovInfo `VerDate` footers, CFR running
+headers, ACS/PTS page footers, rotated watermark text all removed). The biggest extraction
+risk — the CFR and handbooks being **two-column**, which a naive `extract_text()` scrambles —
+is handled by per-page column detection (see `ingest.py`).
 
 ---
 
