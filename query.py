@@ -51,9 +51,13 @@ def _build_context(hits):
     return "\n\n".join(blocks)
 
 
-def ask(question, k=DEFAULT_K):
-    """Return {answer, sources, hits} for a natural-language question."""
-    hits = retrieve(question, k=k)
+def ask(question, k=DEFAULT_K, mode="semantic"):
+    """Return {answer, sources, hits} for a natural-language question.
+
+    mode="semantic" uses embedding search; mode="hybrid" fuses it with BM25 keyword
+    search (stretch feature). See retrieve.py.
+    """
+    hits = retrieve(question, k=k, mode=mode)
 
     if not hits:
         return {"answer": REFUSAL, "sources": [], "hits": []}

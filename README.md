@@ -265,10 +265,50 @@ that shares little surface vocabulary with the question. Semantic similarity mat
 *topic* but not the *regulation*. Generation then faithfully grounded its answer in the
 (insufficient) retrieved context — so the grounding worked, but on the wrong chunks.
 
-**What I would change to fix it:** add **hybrid retrieval** (BM25 keyword search combined with
-semantic search) — a keyword match on "presolo" / "§61.87" would surface the regulation that
-embeddings missed. A larger `k`, or a reranking step over a wider candidate pool, would also
-help. (Q5 shows a related, subtler version of the same retrieval-coverage gap.)
+**What I would change to fix it:** I implemented **hybrid retrieval** (BM25 + semantic, see the
+Stretch Feature section below) expecting it to fix this — and it **did not**, which is itself
+instructive. The corpus *does* contain the answer (Part 61, chunks 475–476: "(c) Pre-solo flight
+training. Prior to conducting a solo flight, a student pilot must…"), but the regulation uses
+the term **"pre-solo"** while the natural query says "before… solo," so *neither* the embedding
+*nor* the keyword retriever ranks it. The real fix is to bridge that vocabulary gap: **query
+expansion** (e.g., expand "before first solo" → "pre-solo requirements §61.87"), or
+**section-aware retrieval** that indexes the regulation's section headings. Probe queries that
+use the regulation's own vocabulary ("pre-solo knowledge test and flight training") *do* surface
+chunks 475–476, confirming the content is reachable — the failure is query–document term
+mismatch, not missing data. (Q5 was a related gap that hybrid *did* fix; see below.)
+
+---
+
+## Stretch Feature: Hybrid Search (semantic + BM25)
+
+**What I built:** a second retrieval mode that combines the embedding (cosine) search with a
+**BM25** keyword index over the same 5,629 chunks, fused with **Reciprocal Rank Fusion (RRF)**
+(`score = Σ 1/(60 + rank)` across the two ranked lists; rank-based, so no score normalization
+needed). It's a `mode="hybrid"` argument on `retrieve()` / `ask()`, so semantic-only stays
+available for comparison. (Reproduce: `python evaluate_hybrid.py` → `eval_hybrid_comparison.md`.)
+
+**Result — semantic vs. hybrid on the 5 eval questions:**
+
+| # | Question | Semantic | Hybrid | What hybrid changed |
+|---|----------|----------|--------|---------------------|
+| 1 | Flight instructor eligibility | Accurate | Accurate | Neutral — also pulled the sport-pilot path (§61.403) |
+| 2 | Sport CFI privileges & limits | Partially accurate | **Accurate** | BM25 matched "privileges"/"limits"/"sport pilot instructor" and surfaced **§61.413 (privileges) and §61.415 (limits)**, which semantic missed |
+| 3 | Laws of learning / primacy | Accurate | Accurate | Neutral — both correct (hybrid's primacy definition slightly fuller) |
+| 4 | Pre-solo endorsement | Inaccurate | **Inaccurate (not fixed)** | No change — §61.87 still not retrieved (vocabulary mismatch; see Failure Case) |
+| 5 | Sport CFI → Private training? | Partial / misleading | **Accurate** | Surfaced **§61.415** and correctly concluded a sport CFI cannot conduct private-pilot training |
+
+**Net: accuracy improved from 2/5 → 4/5, with zero regressions.** Hybrid's gains (Q2, Q5) both
+came from BM25 surfacing the *specific regulation section* whose keywords matched the query, where
+semantic search had returned topically-related-but-imprecise chunks.
+
+**Honest limitation:** hybrid did **not** fix the documented primary failure (Q4). The win
+condition for keyword search is shared surface terms, and the natural Q4 query ("before… first
+solo") shares none with §61.87's "pre-solo" text — so BM25 ranked the same handbook chunks as the
+embeddings. Probe queries using the regulation's own vocabulary do retrieve the right chunks, which
+locates the remaining problem as **query–document term mismatch** (addressable with query expansion
+or section-aware indexing), not a retrieval-algorithm choice. The takeaway: hybrid search reliably
+helps when the user's wording overlaps the source's wording, but it is not a cure for semantic
+vocabulary gaps.
 
 ---
 

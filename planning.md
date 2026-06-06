@@ -206,3 +206,37 @@ don't have enough information" otherwise) and ask it to write the Groq prompt te
 a Gradio UI (question box → answer box + sources box). **Verify:** read the system prompt
 to confirm grounding is enforced (not suggested), confirm sources are appended
 programmatically, and test an out-of-scope question to confirm the system declines.
+
+---
+
+## Stretch Features
+
+### Hybrid Search (semantic + BM25)  — added before implementation
+
+**Motivation:** My evaluation surfaced a concrete retrieval failure (Q4, "what must an
+instructor do before first solo"). Pure semantic search retrieved the Aviation Instructor's
+Handbook's *prose about instructor responsibility* and never surfaced **§61.87**, the
+regulation that actually lists the pre-solo requirements. The query shares little surface
+vocabulary with the regulation's dense list ("presolo knowledge test," "maneuvers and
+procedures"), so embeddings matched the topic but not the rule. Q5 shows a related gap.
+Keyword search is exactly the tool for this: an exact term match on "presolo" / "61.87"
+should rank the regulation highly even when embeddings don't.
+
+**Approach:**
+- Add a **BM25** keyword index (`rank_bm25`, BM25Okapi) over the same 5,629 chunks used by
+  the vector store, tokenizing on lowercased word characters.
+- For a query, take the top-N candidates from **each** of (a) semantic search (ChromaDB
+  cosine) and (b) BM25, then combine them with **Reciprocal Rank Fusion (RRF)**:
+  `score(chunk) = Σ 1 / (60 + rank_in_list)` over the two ranked lists. RRF is rank-based, so
+  it needs no score normalization between cosine distance and BM25 scores. Return the fused
+  top-k = 4.
+- Keep semantic-only retrieval available so I can run the **same 5 eval questions both ways
+  and compare** (retrieved sources, whether §61.87 now appears, and answer accuracy).
+
+**Success criterion:** hybrid retrieval surfaces §61.87 for Q4 (and ideally improves Q5)
+without regressing the questions that already worked (Q1–Q3). I'll report the before/after
+in the README.
+
+**Risk:** RRF could let an off-topic keyword match dilute a strong semantic result.
+Mitigation: fuse from a modest candidate pool (top-N ≈ 20 each) and keep k = 4, then verify
+Q1–Q3 don't regress.
