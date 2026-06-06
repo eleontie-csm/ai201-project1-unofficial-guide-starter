@@ -336,25 +336,43 @@ for ChromaDB. The real binding constraint is the embedding window, not the chunk
 
 ## AI Usage
 
-> *(Drafted from how this project was actually built with Claude Code — edit to match your own
-> experience and voice before submitting.)*
+I used Claude Code as an implementation partner throughout, but I owned the decisions: I
+chose the chunking parameters, embedding model, top-k, interface, and citation approach from
+options I had it lay out, and I directed each debugging step. Four representative instances:
 
-**Instance 1 — Ingestion + chunking (`ingest.py`)**
-- *What I gave the AI:* my `planning.md` Documents and Chunking Strategy sections, plus the
-  observation that the CFR PDFs and handbooks are two-column.
-- *What it produced:* a pipeline that loaded the PDFs, extracted text, cleaned boilerplate,
-  and chunked at ~800/150. The first version used a naive `extract_text()` that scrambled the
-  two-column layouts (left and right columns interleaved line-by-line).
-- *What I changed or overrode:* I directed it to add per-page **column detection** and extract
-  each column separately, and to verify by printing sample chunks. The first column-detection
-  heuristic mis-flagged two-column CFR pages as single-column; I had it switch from a wide
-  "gutter band" test to counting words that actually **cross the centerline**, which fixed it.
+**Instance 1 — Chunking parameters (`ingest.py`, `planning.md`)**
+- *What I directed:* I had the AI present chunking options with their trade-offs rather than
+  pick for me. It surfaced that all-MiniLM-L6-v2 truncates at 256 tokens, so I chose recursive
+  ~800-char / 150-overlap chunks to stay inside that window.
+- *What I reviewed / overrode:* the pipeline produced 5,629 chunks, over the 50–2,000 guideline.
+  The AI's first mitigation was "raise chunk size toward ~1,000." I had it actually test that —
+  it still gave ~4,600, and reaching 2,000 would have broken the token window — so I overrode the
+  guideline and kept ~800-char chunks, and directed that the divergence be documented in
+  `planning.md` and the spec reflection.
 
-**Instance 2 — Grounded generation (`query.py`)**
-- *What I gave the AI:* my grounding requirement (answer only from retrieved context; refuse
-  otherwise) and the decision to attach citations programmatically.
-- *What it produced:* a `query.py` with a grounding system prompt and a `format_response`
-  helper that listed sources after every answer.
-- *What I changed or overrode:* in live testing, the out-of-scope ("Mars") refusal still
-  printed a Sources list, which is misleading. I directed a change to **suppress sources on
-  refusal**, so a non-answer never shows false attribution.
+**Instance 2 — Two-column PDF extraction (`ingest.py`)**
+- *What I directed:* after seeing the first chunks contain interleaved text, I identified that
+  the CFR regs and handbooks are two-column and told the AI to extract columns separately.
+- *What I reviewed / overrode:* its first column-detection heuristic mis-flagged two-column CFR
+  pages as single-column. I had it debug the actual word coordinates; the fix was switching from
+  a wide "gutter band" test to counting words that cross the page centerline.
+
+**Instance 3 — Grounded generation refusal bug (`query.py`)**
+- *What I directed:* I specified the grounding rule (answer only from context; otherwise refuse)
+  and that citations be attached programmatically, not by the LLM.
+- *What I reviewed / overrode:* in testing, the out-of-scope "Mars" question correctly refused
+  but still printed a Sources list. I directed suppressing sources on refusal, so a non-answer
+  never shows false attribution.
+
+**Instance 4 — Choosing the stretch feature (hybrid search)**
+- *What I directed:* I asked the AI what a stretch feature was and to lay out the reasonable
+  options (hybrid search, chunking-strategy comparison, metadata filtering, conversational
+  memory) with how each fit my project. I chose **hybrid search** specifically because my
+  evaluation had already produced a documented retrieval failure (Q4), and hybrid was the option
+  that directly targeted it — so I could measure a real before/after rather than add a feature
+  with no motivating weakness.
+- *What I reviewed / overrode:* the AI (and my own `planning.md` prediction) expected hybrid to
+  fix Q4. The comparison run showed it did **not** — it improved Q2 and Q5 but not Q4. I directed
+  that we keep the honest negative result and correct the earlier prediction in the README, rather
+  than quietly drop it, and had the AI run probe queries to pin the cause (query–document
+  vocabulary mismatch) instead of guessing.
